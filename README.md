@@ -1,10 +1,6 @@
 # Random Inverse Depolarizing Approximation (RIDA)
 
-Universally applicable, low overhead quantum error mitigation for gate and measurement error. 
-
-The theory and results behind RIDA are presented in the accompanying paper: 
-
-     Alexander X. Miller, Micheline B. Soley, "Universal Quantum Error Mitigation via the Random Inverse Depolarizing Approximation," in preparation.
+Universally applicable, low overhead quantum error mitigation for gate and measurement error. We present the theory and results behind RIDA in our paper the accompanying paper: *Universal Quantum Error Mitigation via the Random Inverse Depolarizing Approximation*.
  
  # Instructions
  
