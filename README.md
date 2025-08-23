@@ -4,7 +4,7 @@ Universally applicable, low overhead quantum error mitigation for gate and measu
  
  # Instructions
  
- To create the depolarizing estimation circuit, run the following:
+ To create the depolarization estimation circuit, run the following:
  
  ```
 random_inverse(your_circuit)
