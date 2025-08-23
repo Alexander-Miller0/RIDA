@@ -49,7 +49,6 @@ import numpy as np
 import os
 import time
 from scipy.optimize import curve_fit
-import matplotlib.gridspec as gridspec
 
 plt.ioff() # prevents plots from showing automatically
 
