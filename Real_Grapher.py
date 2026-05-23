@@ -138,18 +138,4 @@ num_strings = 30
 graph_pauli()
 raw_rmse, rida_rmse, cnot_rmse, zne_rmse = rmse()
 print(rmse())
-raw_past = 0
-zne_past = 0
-cnot_past = 0
-rida_past = 0
-for i in range(30):
-    if np.abs(statevector[i] - raw[i]) < 0.1:
-        raw_past += 1
-    if np.abs(statevector[i] - zne[i]) < 0.1:
-        zne_past += 1
-    if np.abs(statevector[i] - cnot[i]) < 0.1:
-        cnot_past += 1
-    if np.abs(statevector[i] - rida[i]) < 0.1:
-        rida_past += 1
-print(raw_past, zne_past, cnot_past, rida_past)
 graph_bar()
