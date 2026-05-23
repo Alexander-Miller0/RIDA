@@ -5,7 +5,7 @@
 ## Settings ##
 
 nqubits = 7 # number of qubits in circuit - will automatically change if run from .sub file
-layers = 1 # number of ansatz layers - default is 12
+layers = 2 # number of ansatz layers - default is 12
 shots_per_circ = 2976 # number of shots per circuit
 max_strings = 30 # number of Pauli strings to test
 benchmark_size = 6 # number of different estimation circuit sets
