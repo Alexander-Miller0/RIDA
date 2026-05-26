@@ -8,8 +8,8 @@ file_name = 'Real hardware results.pkl' # copy paste the name of the file to gra
 
 seperate_plegend = True # whether to save Pauli graph legend as a seperate file
 
-save_results = False # whether to save graphs to seperate .png files
-print_results = True # whether to send graphs to output
+save_results = True # whether to save graphs to seperate .png files
+print_results = False # whether to send graphs to output
 
 raw_color = '#7B3E3E'
 zne_color = "#444A64"
