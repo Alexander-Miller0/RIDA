@@ -11,4 +11,4 @@ random_inverse(your_circuit)
  ```
  Then run multiple such estimation circuits and average the resultant expectation values. The expectation values obtained from target circuits can be divided by this average expectation value to provide an error-mitigated expectation value.
 
- Additional documentation is included in documentation.pdf.
+ Additional documentation is included in documentation.pdf. An updated version of the code is in the 'RIDA-update' folder, with documentation pending.
