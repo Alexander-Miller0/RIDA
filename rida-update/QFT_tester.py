@@ -1,0 +1,188 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+
+## Settings ##
+
+nqubits = 7 # number of qubits in the QFT test
+error_multipliers = [1] # error multipliers to test (one results file is saved for each)
+shots = [2**20] # list of shots to test - R2_Grapher.py uses the index shot_focus (default -1, the last entry)
+match_real_shots = False # whether to use 2976 shots (matching the real hardware test) and mark it on the result file names
+num_strings = 500 # number of Pauli strings to test
+identity_probability = 0.5 # probability that each qubit of a Pauli string is the identity
+
+save_results = True # save results to pickle files
+progress_flags = True # print checkpoints during testing
+print_results = True # print total time taken
+
+# error model: to proportionally increase the error rate, change the error multipliers instead
+# median Kingston error rates as of 7/11/2025
+error_1q = 2.25e-4
+error_2q = 2.07e-3
+ro_error = 7.32e-3
+t1 = 269.88e3
+t2 = 143.41e3
+gate_time = 68
+one_qubit_time_factor = 0.1
+
+
+## Import Libraries ##
+
+import pickle
+import numpy as np
+import time
+import os
+
+from qiskit import transpile
+from qiskit.circuit import QuantumCircuit
+from qiskit.circuit.library import QFT
+from qiskit.quantum_info import Statevector
+from qiskit_ibm_runtime.fake_provider import FakeTorino
+from qiskit_aer import AerSimulator
+from qiskit_aer.noise import (
+    NoiseModel,
+    ReadoutError,
+    depolarizing_error,
+    thermal_relaxation_error
+)
+
+rng = np.random.default_rng()
+state_rng = np.random.default_rng()
+
+
+## Set up Noise Model ##
+
+backend_torino = FakeTorino()
+gates_torino = backend_torino.operation_names # get native gates of hardware for transpilation
+
+# build the same noise model as RIDA.py (incoherent error only) for a given error multiplier
+def build_backend(multiplier):
+    e1q = error_1q*multiplier
+    e2q = error_2q*multiplier
+    gtime = gate_time*multiplier
+    roerr = ro_error*multiplier
+
+    noise_model = NoiseModel()
+    error_1 = depolarizing_error(e1q, 1)
+    error_2 = depolarizing_error(e2q, 2)
+    error_thermal_1 = thermal_relaxation_error(t1, t2, gtime*one_qubit_time_factor)
+    error_thermal_2 = thermal_relaxation_error(t1, t2, gtime).expand(thermal_relaxation_error(t1, t2, gtime))
+    noise_model.add_all_qubit_quantum_error(error_thermal_1, ['id'])
+    noise_model.add_all_qubit_quantum_error(error_1.compose(error_thermal_1), ['rz', 'sx', 'x', 'rx'])
+    noise_model.add_all_qubit_quantum_error(error_2.compose(error_thermal_2), ['cz', 'cx', 'rzz'])
+    noise_model.add_all_qubit_readout_error(ReadoutError([[1 - roerr, roerr], [roerr, 1 - roerr]]))
+    return AerSimulator(noise_model = noise_model)
+
+
+## Helper Functions ##
+
+# create a Haar-random product state on every qubit, followed by the quantum Fourier transform
+# the same state is used for every Pauli string and every error multiplier
+def qft_circuit():
+    circ = QuantumCircuit(nqubits)
+    for i in range(nqubits):
+        theta = np.arccos(1 - 2*state_rng.random()) # Haar-random single-qubit state
+        phi = 2*np.pi*state_rng.random()
+        lam = 2*np.pi*state_rng.random()
+        circ.u(theta, phi, lam, i)
+    circ.compose(QFT(nqubits, do_swaps=False).decompose(), inplace=True)
+    return circ
+
+# generate a random non-identity Pauli string (each qubit is identity with probability identity_probability)
+def random_pauli():
+    while True:
+        pstring = ''.join('I' if rng.random() < identity_probability else rng.choice(['X', 'Y', 'Z']) for _ in range(nqubits))
+        if pstring != 'I'*nqubits:
+            return pstring
+
+# determine the basis change circuit and measured qubits for a Pauli string (character j acts on qubit j)
+def measurement_setup(pstring):
+    circ = QuantumCircuit(nqubits)
+    measured_qubits = []
+    for j in range(len(pstring)):
+        if pstring[j] == 'Z':
+            measured_qubits.append(j)
+        elif pstring[j] == 'X':
+            measured_qubits.append(j)
+            circ.h(j)
+        elif pstring[j] == 'Y':
+            measured_qubits.append(j)
+            circ.s(j)
+            circ.h(j)
+    return circ, measured_qubits
+
+# determine the noiseless expectation of a circuit
+def sv_expectation(circ, measured_qubits):
+    sump = 0.0
+    probs = Statevector(circ).probabilities(measured_qubits)
+    for i in range(len(probs)):
+        if sum(int(digit) for digit in bin(i)[2:])%2 == 1: # check if it results in a 1 on the classical bit
+            sump += probs[i]
+    return 1 - 2*sump # the expectation value of an operator is 1-2p(1)
+
+# determine the noisy expectation value of a circuit
+def run_circ(circ, aerbackend, num_shots, measured_qubits):
+    circ = circ.compose(QuantumCircuit(nqubits, len(measured_qubits)))
+    for i in range(len(measured_qubits)):
+        circ.measure(measured_qubits[i], i)
+    counts = aerbackend.run(circ, shots = int(num_shots)).result().get_counts()
+    sump = 0
+    for result in counts:
+        if sum(int(digit) for digit in result)%2 == 1: # check if it results in a 1 on the classical bit
+            sump += counts[result]
+    return 1-2*sump/num_shots # the expectation value of an operator is 1-2p(1)
+
+
+## Driver ##
+
+if match_real_shots:
+    shots = [2976]
+start = time.time()
+
+# generate random Pauli strings
+operators = [random_pauli() for i in range(num_strings)]
+
+# error-free expectations with statevector
+qft = qft_circuit()
+statevector = np.zeros(num_strings)
+measurement_map = []
+basis_circuits = []
+for i in range(num_strings):
+    basis_circ, measured_qubits = measurement_setup(operators[i])
+    basis_circuits.append(basis_circ)
+    measurement_map.append(measured_qubits)
+    statevector[i] = sv_expectation(qft.compose(basis_circ), measured_qubits)
+
+# unmitigated expectations from the noisy simulator for each error multiplier
+for multiplier in error_multipliers:
+    if progress_flags:
+        print('-------Testing ' + str(multiplier) + 'x error-------')
+    aerbackend = build_backend(multiplier)
+    raw = np.zeros((len(shots), num_strings))
+    mult_start = time.time()
+    for j in range(num_strings):
+        circ_t = transpile(qft.compose(basis_circuits[j]), aerbackend, basis_gates = gates_torino)
+        for i in range(len(shots)):
+            raw[i][j] = run_circ(circ_t, aerbackend, shots[i], measurement_map[j])
+        if progress_flags:
+            print('Pauli String ', j+1, '/', num_strings, ' completed')
+            rem_time = (time.time() - mult_start) * (num_strings - j - 1) / (j + 1)
+            print('Estimated time remaining: ', int(rem_time/3600), 'hours,', int(rem_time/60%60), 'minutes')
+
+    # create dictionary with relevant values to export (same keys that R2_Grapher.py reads from RESULTS files)
+    if save_results:
+        save_dict = {'nqubits': nqubits, 'error_multiplier': multiplier, 'shots': shots,
+                     'statevector': statevector, 'raw': raw, 'operators': operators, 'state': 'QFT'}
+        file_path = 'RESULTS - ' + str(nqubits) + ' qubits, ' + str(multiplier) + 'x error (QFT)'
+        if match_real_shots:
+            file_path = file_path + ', 2976 shots'
+        if os.path.isfile(file_path + '.pkl'):
+            file_path = file_path + ' - ' + str(time.time())
+        with open(file_path + '.pkl', 'wb') as f:
+            pickle.dump(save_dict, f)
+
+# print time taken
+if print_results:
+    end = time.time()
+    print()
+    print('Total time: ', int((end-start)/3600), 'hours', int((end-start)/60%60), 'minutes')
